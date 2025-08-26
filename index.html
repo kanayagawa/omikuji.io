@@ -1,20 +1,206 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#ffffff" />
   <title>デジタルおみくじ</title>
+  <style>
+    :root{
+      --bg:#f7f7fb; --fg:#0f172a; --muted:#475569; --border:#e5e7eb;
+      --card:#fff; --primary:#2563eb; --shadow:0 12px 28px rgba(15,23,42,.10);
+      --accent:#f59e0b; --success:#10b981;
+    }
+    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+    html,body{margin:0;height:100%}
+    body{
+      font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans JP","Hiragino Kaku Gothic ProN",Meiryo,sans-serif;
+      background:var(--bg); color:var(--fg); line-height:1.6;
+      display:flex; align-items:center; justify-content:center; padding:20px;
+    }
+    .wrap{width:min(720px,100%); margin:auto}
+    header{ text-align:center; margin-bottom:12px }
+    h1{ margin:0; font-size:clamp(22px,5vw,32px)}
+    .sub{ color:var(--muted); font-size:clamp(13px,3.5vw,15px); margin-top:4px}
+    .card{
+      background:var(--card); border:1px solid var(--border); border-radius:18px;
+      box-shadow:var(--shadow); padding:18px; margin:14px 0; position:relative; overflow:hidden;
+    }
+    .paper{
+      background:linear-gradient(180deg,#fff 0%,#fff 60%,#fff8ec 100%);
+      border:1px dashed #d6d3d1; border-radius:14px; padding:22px;
+      text-align:center; transform:translateY(6px); animation:pop .45s ease;
+    }
+    @keyframes pop{from{opacity:.0; transform:translateY(18px) scale(.98)} to{opacity:1; transform:translateY(6px) scale(1)}}
+    .title{font-weight:800; font-size:clamp(22px,6vw,30px); margin:0 0 6px}
+    .emoji{font-size:clamp(36px,10vw,48px); margin:2px 0 10px}
+    .desc{color:var(--muted); margin-bottom:10px}
+    .grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px}
+    .pill{
+      border:1px solid var(--border); border-radius:12px; padding:10px 12px;
+      display:flex; align-items:center; justify-content:space-between; background:#fff;
+      font-size:clamp(14px,3.8vw,16px)
+    }
+    .pill span:first-child{ color:#64748b }
+    .actions{ display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:14px }
+    .btn{
+      appearance:none; border:1px solid var(--border); background:#fff; color:var(--fg);
+      padding:14px 16px; border-radius:14px; font-weight:700; cursor:pointer; min-width:140px;
+      box-shadow:var(--shadow); font-size:16px;
+    }
+    .btn:active{ transform:translateY(1px) }
+    .primary{ background:var(--primary); color:#fff; border-color:transparent }
+    .ghost{ background:transparent }
+    .tiny{ text-align:center; color:#64748b; font-size:12px; margin-top:10px }
+    /* confetti */
+    .confetti{ position:fixed; inset:0; pointer-events:none; overflow:hidden }
+    .confetti i{
+      position:absolute; top:-10vh; width:8px; height:14px; opacity:.9;
+      transform:translateY(-100%); animation:fall linear forwards;
+    }
+    @keyframes fall{
+      to{ transform:translateY(120vh) rotate(720deg) }
+    }
+  </style>
 </head>
-<body style="text-align:center; font-family:sans-serif;">
-  <h1>🎲 今日の運勢 🎲</h1>
-  <button onclick="draw()">おみくじを引く</button>
-  <h2 id="result"></h2>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>🎲 デジタルおみくじ</h1>
+      <div class="sub">スマホでワンタップ、今日の運勢をどうぞ。</div>
+    </header>
+
+    <section class="card">
+      <div class="paper" id="paper">
+        <div class="title" id="resultTitle">おみくじ未実行</div>
+        <div class="emoji" id="resultEmoji">🔮</div>
+        <div class="desc" id="resultBody">「おみくじを引く」をタップしてください。</div>
+
+        <div class="grid" aria-live="polite">
+          <div class="pill"><span>恋愛</span><span id="love">—</span></div>
+          <div class="pill"><span>仕事</span><span id="work">—</span></div>
+          <div class="pill"><span>学業</span><span id="study">—</span></div>
+          <div class="pill"><span>健康</span><span id="health">—</span></div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="btn primary" id="drawBtn">おみくじを引く</button>
+        <button class="btn" id="shareBtn">結果を共有</button>
+        <button class="btn ghost" id="resetBtn">リセット</button>
+      </div>
+      <div class="tiny">※ 同日2回目はアラート表示（「リセット」で解除）</div>
+    </section>
+  </div>
+
+  <div class="confetti" id="fx" aria-hidden="true"></div>
 
   <script>
-    function draw() {
-      const results = ["大吉 ✨", "中吉 😊", "小吉 🙂", "末吉 😐", "凶 😱"];
-      const choice = results[Math.floor(Math.random() * results.length)];
-      document.getElementById("result").innerText = choice;
+    // --- elements
+    const T = (id)=>document.getElementById(id);
+    const resultTitle=T("resultTitle"), resultEmoji=T("resultEmoji"), resultBody=T("resultBody");
+    const love=T("love"), work=T("work"), study=T("study"), health=T("health");
+    const fx=T("fx");
+
+    // --- fortune table (weights = 出現率)
+    const fortunes = [
+      { name:"大吉", emoji:"🎉", weight:10,  desc:"最高の一日。積極的に動こう！", confetti:true },
+      { name:"中吉", emoji:"😊", weight:25,  desc:"良い流れ。手を抜かずに前進。" },
+      { name:"小吉", emoji:"🙂", weight:28,  desc:"小さな幸せあり。準備を怠らず。" },
+      { name:"末吉", emoji:"😐", weight:22,  desc:"焦らず着実に。基礎を大切に。" },
+      { name:"凶",   emoji:"😱", weight:15,  desc:"無理は禁物。慎重さが鍵。" }
+    ];
+    const subs = ["最高","良好","普通","注意","要自愛"];
+
+    // --- helpers
+    const pick = arr => arr[Math.floor(Math.random()*arr.length)];
+    function weightedPick(items){
+      const total = items.reduce((s,x)=>s+x.weight,0);
+      let r = Math.random()*total;
+      for(const it of items){ r-=it.weight; if(r<=0) return it; }
+      return items[items.length-1];
     }
+    function todayKey(){ return new Date().toISOString().slice(0,10); }
+    function canDraw(){ return localStorage.getItem("omikuji:lastDate") !== todayKey(); }
+
+    function render(res){
+      resultTitle.textContent = res.main.name;
+      resultEmoji.textContent = res.main.emoji;
+      resultBody.textContent  = res.main.desc;
+      love.textContent   = res.details.love;
+      work.textContent   = res.details.work;
+      study.textContent  = res.details.study;
+      health.textContent = res.details.health;
+    }
+
+    function confettiBurst(){
+      // simple, lightweight confetti
+      fx.innerHTML="";
+      const colors=["#f59e0b","#10b981","#3b82f6","#ef4444","#8b5cf6","#14b8a6"];
+      const n = 40;
+      for(let i=0;i<n;i++){
+        const s=document.createElement("i");
+        const left=Math.random()*100;
+        const dur=1.2+Math.random()*1.0;
+        const delay=Math.random()*0.2;
+        s.style.left=left+"vw";
+        s.style.background=colors[Math.floor(Math.random()*colors.length)];
+        s.style.animationDuration=dur+"s";
+        s.style.animationDelay=delay+"s";
+        fx.appendChild(s);
+      }
+      // auto clear
+      setTimeout(()=>fx.innerHTML="",2200);
+      if (navigator.vibrate) navigator.vibrate(15);
+    }
+
+    function draw(){
+      if(!canDraw()){
+        alert("今日は既に引いています（1日1回）。「リセット」で無効化できます。");
+        return;
+      }
+      const main = weightedPick(fortunes);
+      const details = { love:pick(subs), work:pick(subs), study:pick(subs), health:pick(subs) };
+      const res = { main, details, date: todayKey() };
+      render(res);
+      localStorage.setItem("omikuji:lastDate", res.date);
+      localStorage.setItem("omikuji:lastResult", JSON.stringify(res));
+      if(main.confetti) confettiBurst();
+    }
+
+    function loadTodayIfAny(){
+      try{
+        const saved = JSON.parse(localStorage.getItem("omikuji:lastResult")||"null");
+        if(saved && saved.date === todayKey()) render(saved);
+      }catch(e){}
+    }
+
+    async function share(){
+      const text = `今日の運勢：${resultTitle.textContent}（${resultBody.textContent}）`;
+      const data = { title:"デジタルおみくじ", text, url:location.href };
+      try{
+        if(navigator.share){ await navigator.share(data); }
+        else{
+          await navigator.clipboard.writeText(`${data.title}\n${data.text}\n${data.url}`);
+          alert("結果をコピーしました。SNSに貼り付けてシェアできます。");
+        }
+      }catch(e){}
+    }
+
+    function reset(){
+      localStorage.removeItem("omikuji:lastDate");
+      localStorage.removeItem("omikuji:lastResult");
+      render({
+        main:{name:"おみくじ未実行", emoji:"🔮", desc:"「おみくじを引く」をタップしてください。"},
+        details:{love:"—",work:"—",study:"—",health:"—"}
+      });
+    }
+
+    // --- bind
+    document.getElementById("drawBtn").addEventListener("click", draw);
+    document.getElementById("shareBtn").addEventListener("click", share);
+    document.getElementById("resetBtn").addEventListener("click", reset);
+    loadTodayIfAny();
   </script>
 </body>
 </html>
