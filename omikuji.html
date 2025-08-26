@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>デジタルおみくじ</title>
+</head>
+<body style="text-align:center; font-family:sans-serif;">
+  <h1>🎲 今日の運勢 🎲</h1>
+  <button onclick="draw()">おみくじを引く</button>
+  <h2 id="result"></h2>
+
+  <script>
+    function draw() {
+      const results = ["大吉 ✨", "中吉 😊", "小吉 🙂", "末吉 😐", "凶 😱"];
+      const choice = results[Math.floor(Math.random() * results.length)];
+      document.getElementById("result").innerText = choice;
+    }
+  </script>
+</body>
+</html>
